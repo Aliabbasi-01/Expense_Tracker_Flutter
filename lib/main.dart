@@ -1,11 +1,26 @@
 import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const MainApp());
+  runApp(MainApp());
 }
 
 class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+  MainApp({super.key});
+
+  List<String> names = [
+    "Ali",
+    "Ahmed",
+    "Ahsan",
+    "Ali",
+    "Ahmed",
+    "Ahsan",
+    "Ali",
+    "Ahmed",
+    "Ahsan",
+    "Ali",
+    "Ahmed",
+    "Ahsan",
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -204,41 +219,72 @@ class MainApp extends StatelessWidget {
                 ),
               ],
             ),
-            Flexible(
-              child: ListView(
-                scrollDirection: Axis.vertical,
-                physics: ClampingScrollPhysics(),
-                shrinkWrap: true,
-                children: [
-                  Text("one"),
-                  const Divider(color: Colors.black),
-                  Text("two"),
-                  const Divider(color: Colors.black),
-                  Text("three"),
-                  const Divider(color: Colors.black),
-                  Text("four"),
-                  const Divider(color: Colors.black),
-                  Text("five"),
-                  const Divider(color: Colors.black),
-                  Text("six"),
-                  const Divider(color: Colors.black),
-                  Text("seven"),
-                  const Divider(color: Colors.black),
-                  Text("one"),
-                  Text("two"),
-                  Text("three"),
-                  Text("four"),
-                  Text("five"),
-                  Text("six"),
-                  Text("seven"),
-                  Text("one"),
-                  Text("two"),
-                  Text("three"),
-                  Text("four"),
-                  Text("five"),
-                  Text("six"),
-                  Text("seven"),
-                ],
+
+            Expanded(
+              child: ListView.builder(
+                physics: BouncingScrollPhysics(),
+                itemCount: names.length,
+                itemBuilder: (context, index) {
+                  return Container(
+                    margin: EdgeInsets.all(10),
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: [Colors.purpleAccent, Colors.yellow],
+                      ),
+
+                      border: Border.all(
+                        color: const Color.fromARGB(255, 245, 243, 243),
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color.fromARGB(
+                            255,
+                            242,
+                            238,
+                            238,
+                          ).withValues(alpha: 0.5),
+                          spreadRadius: 12,
+                          blurRadius: 5,
+                          offset: Offset(0, 5),
+                        ),
+                      ],
+                      color: const Color.fromARGB(255, 0, 6, 10),
+                    ),
+
+                    child: Stack(
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: EdgeInsetsGeometry.all(2),
+
+                            child: CircleAvatar(
+                              radius: 20,
+                              backgroundImage: AssetImage('assets/profile.png'),
+                            ),
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.center,
+                          child: Padding(
+                            padding: EdgeInsetsGeometry.all(5),
+                            child: Text(
+                              names[index],
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ],
