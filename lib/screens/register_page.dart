@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:expense_tracker/services/auth_service.dart';
+
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -34,6 +36,18 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
+  void _showMessage(String msg, {bool error = false}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: error ? Colors.redAccent : null,
+        ),
+      );
+  }
+
   Future<void> _register() async {
     final formOk = _formKey.currentState!.validate();
 
@@ -43,18 +57,23 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() => _loading = true);
 
-    // TODO: yahan apni register API call lagayein
-    await Future.delayed(const Duration(seconds: 2));
+    // User ko local database mein save karte hain
+    final result = await AuthService.instance.register(
+      name: _nameCtrl.text,
+      email: _emailCtrl.text,
+      phone: _phoneCtrl.text,
+      password: _passCtrl.text,
+    );
 
     if (!mounted) return;
     setState(() => _loading = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Account created! Please sign in.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    if (!result.success) {
+      _showMessage(result.message, error: true);
+      return;
+    }
+
+    _showMessage(result.message);
 
     // Wapas login page par
     Navigator.pop(context);
@@ -202,8 +221,9 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                       validator: (v) {
                         final value = v?.trim() ?? '';
-                        if (value.isEmpty)
+                        if (value.isEmpty) {
                           return 'Please enter your phone number';
+                        }
                         if (value.replaceAll(RegExp(r'\D'), '').length < 10) {
                           return 'Enter a valid phone number';
                         }

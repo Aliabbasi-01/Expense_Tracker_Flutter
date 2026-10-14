@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:expense_tracker/services/auth_service.dart';
 
 import 'dashboard_page.dart';
 import 'register_page.dart';
@@ -31,13 +32,29 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
+    FocusScope.of(context).unfocus();
     setState(() => _loading = true);
 
-    // TODO: yahan apni login API call lagayein
-    await Future.delayed(const Duration(seconds: 2));
+    final result = await AuthService.instance.login(
+      email: _emailCtrl.text,
+      password: _passCtrl.text,
+    );
 
     if (!mounted) return;
     setState(() => _loading = false);
+
+    if (!result.success) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      return;
+    }
 
     // pushReplacement: login screen stack se hat jati hai,
     // is liye dashboard se back dabane par login wapas nahi aata
@@ -47,11 +64,18 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  void _openRegister() {
-    Navigator.push(
+  Future<void> _openRegister() async {
+    // Register se wapas aane par email khud bhar dein (convenience)
+    final registeredEmail = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (_) => const RegisterPage()),
     );
+    if (registeredEmail != null && mounted) {
+      setState(() {
+        _emailCtrl.text = registeredEmail;
+        _passCtrl.clear();
+      });
+    }
   }
 
   InputDecoration _inputStyle(String hint, IconData icon, {Widget? suffix}) {

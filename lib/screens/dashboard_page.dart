@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'profile_page.dart';
+
 // ============================================================
 // MODEL
 // ============================================================
@@ -188,7 +190,25 @@ class _DashboardPageState extends State<DashboardPage> {
         backgroundColor: Colors.white,
         indicatorColor: primary.withValues(alpha: 0.15),
         selectedIndex: _navIndex,
-        onDestinationSelected: (i) => setState(() => _navIndex = i),
+        onDestinationSelected: (i) {
+          if (i == 3) {
+            // Profile tab: nayi screen kholo
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProfilePage(
+                  name: 'Ali',
+                  email: 'ali@gmail.com',
+                  transactionCount: _items.length,
+                  incomeText: money(_income),
+                  expenseText: money(_expense),
+                ),
+              ),
+            );
+          } else {
+            setState(() => _navIndex = i);
+          }
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
