@@ -1,96 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'package:expense_tracker/screens/groups_page.dart';
+import 'package:expense_tracker/screens/stats_page.dart';
+import 'package:expense_tracker/screens/wallet_page.dart';
+import 'package:expense_tracker/services/currency_service.dart';
+import 'package:expense_tracker/services/finance_service.dart';
+
 import 'profile_page.dart';
-
-// ============================================================
-// MODEL
-// ============================================================
-
-class ExpenseItem {
-  final String title;
-  final String category;
-  final double amount;
-  final DateTime date;
-  final bool isExpense;
-
-  ExpenseItem({
-    required this.title,
-    required this.category,
-    required this.amount,
-    required this.date,
-    required this.isExpense,
-  });
-}
-
-// ============================================================
-// HELPERS
-// ============================================================
-
-IconData categoryIcon(String category) {
-  switch (category) {
-    case 'Food':
-      return Icons.restaurant_rounded;
-    case 'Transport':
-      return Icons.directions_car_rounded;
-    case 'Shopping':
-      return Icons.shopping_bag_rounded;
-    case 'Bills':
-      return Icons.receipt_long_rounded;
-    case 'Health':
-      return Icons.favorite_rounded;
-    case 'Salary':
-      return Icons.account_balance_wallet_rounded;
-    default:
-      return Icons.category_rounded;
-  }
-}
-
-Color categoryColor(String category) {
-  switch (category) {
-    case 'Food':
-      return const Color(0xFFFF8A65);
-    case 'Transport':
-      return const Color(0xFF42A5F5);
-    case 'Shopping':
-      return const Color(0xFFAB47BC);
-    case 'Bills':
-      return const Color(0xFFFFB300);
-    case 'Health':
-      return const Color(0xFFEF5350);
-    case 'Salary':
-      return const Color(0xFF26A69A);
-    default:
-      return const Color(0xFF78909C);
-  }
-}
-
-String money(double value) {
-  final digits = value.abs().toStringAsFixed(0);
-  final buffer = StringBuffer();
-  for (int i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
-    buffer.write(digits[i]);
-  }
-  return '${value < 0 ? '-' : ''}Rs $buffer';
-}
-
-String shortDate(DateTime d) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return '${d.day} ${months[d.month - 1]}';
-}
 
 bool sameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
@@ -111,33 +27,101 @@ class _DashboardPageState extends State<DashboardPage> {
   static const Color dark = Color(0xFF1B1B2F);
   static const Color background = Color(0xFFF5F6FA);
 
-  int _navIndex = 0;
+  final _svc = FinanceService.instance;
 
-  late final List<ExpenseItem> _items;
+  int _navIndex = 0;
+  bool _loading = true;
+
+  List<Wallet> _wallets = [];
+  List<TxItem> _recent = [];
+  List<TxItem> _monthTxs = [];
+  List<TxItem> _weekTxs = [];
+  int _txCount = 0;
+
+  String get _userName {
+    final name = Session.userName?.trim() ?? '';
+    return name.isEmpty ? 'there' : name;
+  }
+
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning,';
+    if (hour < 17) return 'Good afternoon,';
+    return 'Good evening,';
+  }
 
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    _items = [];
+    _svc.changes.addListener(_load);
+    CurrencyService.instance.changes.addListener(_currencyChanged);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _svc.changes.removeListener(_load);
+    CurrencyService.instance.changes.removeListener(_currencyChanged);
+    super.dispose();
+  }
+
+  void _currencyChanged() {
+    if (mounted) setState(() {});
+  }
+
+  // ---------- Data ----------
+
+  Future<void> _load() async {
+    try {
+      final now = DateTime.now();
+      final monthStart = DateTime(now.year, now.month);
+      final monthEnd = DateTime(now.year, now.month + 1);
+      final weekStart = DateTime(now.year, now.month, now.day - 6);
+      final tomorrow = DateTime(now.year, now.month, now.day + 1);
+
+      final wallets = await _svc.getWallets();
+      final recent = await _svc.getTransactions(limit: 10);
+      final monthTxs = await _svc.getTransactionsBetween(monthStart, monthEnd);
+      final weekTxs = await _svc.getTransactionsBetween(weekStart, tomorrow);
+      final count = await _svc.countTransactions();
+
+      if (!mounted) return;
+      setState(() {
+        _wallets = wallets;
+        _recent = recent;
+        _monthTxs = monthTxs;
+        _weekTxs = weekTxs;
+        _txCount = count;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load data: $e'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   // ---------- Calculations ----------
 
-  double get _income => _items
-      .where((e) => !e.isExpense)
+  double get _balance => _wallets.fold<double>(0, (s, w) => s + w.balance);
+
+  double get _income => _monthTxs
+      .where((e) => e.isIncome)
       .fold<double>(0, (sum, e) => sum + e.amount);
 
-  double get _expense => _items
-      .where((e) => e.isExpense)
+  double get _expense => _monthTxs
+      .where((e) => !e.isIncome)
       .fold<double>(0, (sum, e) => sum + e.amount);
-
-  double get _balance => _income - _expense;
 
   Map<String, double> get _categoryTotals {
     final map = <String, double>{};
-    for (final e in _items.where((e) => e.isExpense)) {
+    for (final e in _monthTxs.where((e) => !e.isIncome)) {
       map[e.category] = (map[e.category] ?? 0) + e.amount;
     }
     return map;
@@ -146,27 +130,84 @@ class _DashboardPageState extends State<DashboardPage> {
   // ---------- Actions ----------
 
   Future<void> _openAddSheet() async {
-    final result = await showModalBottomSheet<ExpenseItem>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (_) => const _AddTransactionSheet(),
-    );
-
-    if (result != null) {
-      setState(() => _items.add(result));
+    if (_wallets.isEmpty) return;
+    final saved = await showAddTransactionSheet(context, _wallets);
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Transaction added'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
-  void _deleteItem(ExpenseItem item) {
-    setState(() => _items.remove(item));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${item.title} deleted'),
-        behavior: SnackBarBehavior.floating,
+  Future<bool?> _confirmDelete(TxItem item) {
+    final title = item.note.isEmpty ? item.category : item.note;
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete transaction?'),
+        content: Text('"$title" will be permanently deleted.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteItem(
+    TxItem item, {
+    bool confirm = true,
+    bool dismissed = false,
+  }) async {
+    if (confirm && await _confirmDelete(item) != true) return;
+    if (dismissed && mounted) {
+      setState(() => _recent.removeWhere((e) => e.id == item.id));
+    }
+    try {
+      await _svc.deleteTransaction(item.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Transaction deleted'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not delete transaction: $error'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _load();
+    }
+  }
+
+  void _openProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfilePage(
+          name: Session.userName ?? 'User',
+          email: Session.userEmail ?? '',
+          transactionCount: _txCount,
+          income: _income,
+          expense: _expense,
+        ),
       ),
     );
   }
@@ -175,36 +216,29 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final recent = [..._items]..sort((a, b) => b.date.compareTo(a.date));
-
     return Scaffold(
       backgroundColor: background,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openAddSheet,
-        backgroundColor: primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Add', style: TextStyle(fontWeight: FontWeight.w700)),
-      ),
+      // Stats aur Wallet screens ka apna layout hai, FAB sirf Home par
+      floatingActionButton: _navIndex == 0
+          ? FloatingActionButton.extended(
+              onPressed: _openAddSheet,
+              backgroundColor: primary,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(
+                'Add',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            )
+          : null,
       bottomNavigationBar: NavigationBar(
         backgroundColor: Colors.white,
         indicatorColor: primary.withValues(alpha: 0.15),
         selectedIndex: _navIndex,
         onDestinationSelected: (i) {
-          if (i == 3) {
+          if (i == 4) {
             // Profile tab: nayi screen kholo
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ProfilePage(
-                  name: 'Ali',
-                  email: 'ali@gmail.com',
-                  transactionCount: _items.length,
-                  incomeText: money(_income),
-                  expenseText: money(_expense),
-                ),
-              ),
-            );
+            _openProfile();
           } else {
             setState(() => _navIndex = i);
           }
@@ -229,14 +263,39 @@ class _DashboardPageState extends State<DashboardPage> {
             label: 'Wallet',
           ),
           NavigationDestination(
+            icon: Icon(Icons.groups_outlined),
+            selectedIcon: Icon(Icons.groups_rounded, color: primary),
+            label: 'Groups',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person_rounded, color: primary),
             label: 'Profile',
           ),
         ],
       ),
-      body: SafeArea(
+      body: IndexedStack(
+        index: _navIndex,
+        children: [
+          _homeTab(),
+          const StatsPage(),
+          const WalletPage(),
+          const GroupsPage(),
+        ],
+      ),
+    );
+  }
+
+  Widget _homeTab() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return SafeArea(
+      child: RefreshIndicator(
+        onRefresh: _load,
         child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
           child: Center(
             child: ConstrainedBox(
@@ -247,18 +306,20 @@ class _DashboardPageState extends State<DashboardPage> {
                   _header(),
                   const SizedBox(height: 24),
                   _balanceCard(),
+                  const SizedBox(height: 22),
+                  _groupsFeatureCard(),
                   const SizedBox(height: 28),
                   _sectionTitle('Last 7 days'),
                   const SizedBox(height: 12),
                   _weeklyChart(),
                   const SizedBox(height: 28),
-                  _sectionTitle('Top spending'),
+                  _sectionTitle('Top spending (this month)'),
                   const SizedBox(height: 12),
                   _topCategories(),
                   const SizedBox(height: 28),
                   _sectionTitle('Recent transactions'),
                   const SizedBox(height: 12),
-                  if (recent.isEmpty)
+                  if (_recent.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Center(
@@ -269,7 +330,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                     )
                   else
-                    ...recent.map(_transactionTile),
+                    ..._recent.map(_transactionTile),
                 ],
               ),
             ),
@@ -280,48 +341,73 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _header() {
+    final initial = _userName.isNotEmpty ? _userName[0].toUpperCase() : '?';
+
     return Row(
       children: [
-        const CircleAvatar(
-          radius: 24,
-          backgroundColor: primary,
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF5B4BFF), Color(0xFF9B6BFF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: primary.withValues(alpha: 0.2),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
           child: Text(
-            'A',
-            style: TextStyle(
+            initial,
+            style: const TextStyle(
               color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ),
         const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Welcome back,',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-            ),
-            const Text(
-              'Ali',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: dark,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _greeting,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
-          ],
+              Text(
+                _userName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: dark,
+                ),
+              ),
+            ],
+          ),
         ),
-        const Spacer(),
-        Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
+        IconButton.filledTonal(
+          tooltip: 'Open profile',
+          onPressed: _openProfile,
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: dark,
+            fixedSize: const Size(46, 46),
           ),
-          child: IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.notifications_none_rounded, color: dark),
-          ),
+          icon: const Icon(Icons.person_outline_rounded),
         ),
       ],
     );
@@ -354,15 +440,23 @@ class _DashboardPageState extends State<DashboardPage> {
             style: TextStyle(color: Colors.white70, fontSize: 14),
           ),
           const SizedBox(height: 6),
-          Text(
-            money(_balance),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 34,
-              fontWeight: FontWeight.w800,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              money(_balance),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 34,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 4),
+          const Text(
+            'This month',
+            style: TextStyle(color: Colors.white60, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -435,6 +529,140 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Widget _groupsFeatureCard() {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(26),
+      child: InkWell(
+        onTap: () => setState(() => _navIndex = 3),
+        borderRadius: BorderRadius.circular(26),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF25234A), Color(0xFF5143C7)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF5143C7).withValues(alpha: 0.22),
+                blurRadius: 18,
+                offset: const Offset(0, 9),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -12,
+                top: -18,
+                child: Icon(
+                  Icons.groups_rounded,
+                  size: 128,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: const Icon(
+                          Icons.groups_rounded,
+                          color: Colors.white,
+                          size: 25,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'SHARED GROUPS',
+                              style: TextStyle(
+                                color: Color(0xFFD8D3FF),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.3,
+                              ),
+                            ),
+                            SizedBox(height: 3),
+                            Text(
+                              'Better together',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        color: Colors.white70,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Share expenses, track contributions and stay in sync with your people.',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Explore groups',
+                          style: TextStyle(
+                            color: Color(0xFF3D35A6),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                        SizedBox(width: 7),
+                        Icon(
+                          Icons.north_east_rounded,
+                          color: Color(0xFF3D35A6),
+                          size: 16,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sectionTitle(String text) {
     return Text(
       text,
@@ -457,8 +685,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
     final totals = days
         .map(
-          (d) => _items
-              .where((e) => e.isExpense && sameDay(e.date, d))
+          (d) => _weekTxs
+              .where((e) => !e.isIncome && sameDay(e.date, d))
               .fold<double>(0, (sum, e) => sum + e.amount),
         )
         .toList();
@@ -555,7 +783,8 @@ class _DashboardPageState extends State<DashboardPage> {
           : Column(
               children: top.map((entry) {
                 final percent = _expense == 0 ? 0.0 : entry.value / _expense;
-                final color = categoryColor(entry.key);
+                final info = Categories.find(entry.key, income: false);
+                final color = info.color;
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -567,11 +796,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           color: color.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(
-                          categoryIcon(entry.key),
-                          color: color,
-                          size: 20,
-                        ),
+                        child: Icon(info.icon, color: color, size: 20),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -620,13 +845,16 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _transactionTile(ExpenseItem item) {
-    final color = categoryColor(item.category);
+  Widget _transactionTile(TxItem item) {
+    final info = Categories.find(item.category, income: item.isIncome);
+    final color = info.color;
+    final title = item.note.isEmpty ? item.category : item.note;
 
     return Dismissible(
-      key: ObjectKey(item),
+      key: ValueKey('home_tx_${item.id}'),
       direction: DismissDirection.endToStart,
-      onDismissed: (_) => _deleteItem(item),
+      confirmDismiss: (_) => _confirmDelete(item),
+      onDismissed: (_) => _deleteItem(item, confirm: false, dismissed: true),
       background: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.only(right: 24),
@@ -652,7 +880,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 color: color.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(categoryIcon(item.category), color: color),
+              child: Icon(info.icon, color: color),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -660,7 +888,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.title,
+                    title,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 15,
@@ -670,246 +898,35 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${item.category} • ${shortDate(item.date)}',
+                    '${item.category} • ${item.walletName} • ${friendlyDate(item.date)}',
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ],
               ),
             ),
+            const SizedBox(width: 8),
             Text(
-              '${item.isExpense ? '-' : '+'}${money(item.amount)}',
+              '${item.isIncome ? '+' : '-'}${money(item.amount)}',
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
-                color: item.isExpense
-                    ? Colors.redAccent
-                    : const Color(0xFF26A69A),
+                color: item.isIncome
+                    ? const Color(0xFF26A69A)
+                    : Colors.redAccent,
               ),
             ),
+            IconButton(
+              tooltip: 'Delete transaction',
+              onPressed: () => _deleteItem(item),
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.redAccent,
+                size: 21,
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// ADD TRANSACTION BOTTOM SHEET
-// ============================================================
-
-class _AddTransactionSheet extends StatefulWidget {
-  const _AddTransactionSheet();
-
-  @override
-  State<_AddTransactionSheet> createState() => _AddTransactionSheetState();
-}
-
-class _AddTransactionSheetState extends State<_AddTransactionSheet> {
-  static const Color primary = Color(0xFF5B4BFF);
-  static const Color dark = Color(0xFF1B1B2F);
-
-  static const List<String> expenseCategories = [
-    'Food',
-    'Transport',
-    'Shopping',
-    'Bills',
-    'Health',
-    'Other',
-  ];
-  static const List<String> incomeCategories = ['Salary', 'Other'];
-
-  final _formKey = GlobalKey<FormState>();
-  final _titleCtrl = TextEditingController();
-  final _amountCtrl = TextEditingController();
-
-  bool _isExpense = true;
-  String _category = 'Food';
-
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    _amountCtrl.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
-
-    final item = ExpenseItem(
-      title: _titleCtrl.text.trim(),
-      category: _category,
-      amount: double.parse(_amountCtrl.text.trim()),
-      date: DateTime.now(),
-      isExpense: _isExpense,
-    );
-
-    Navigator.pop(context, item);
-  }
-
-  InputDecoration _decoration(String hint, IconData icon) {
-    return InputDecoration(
-      hintText: hint,
-      prefixIcon: Icon(icon, color: Colors.grey.shade600),
-      filled: true,
-      fillColor: const Color(0xFFF3F4F8),
-      contentPadding: const EdgeInsets.symmetric(vertical: 18),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: primary, width: 1.5),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Colors.redAccent),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final categories = _isExpense ? expenseCategories : incomeCategories;
-
-    return Padding(
-      // Keyboard ke upar sheet uthane ke liye
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 44,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Add transaction',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: dark,
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Expense / Income toggle
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<bool>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: true, label: Text('Expense')),
-                    ButtonSegment(value: false, label: Text('Income')),
-                  ],
-                  selected: {_isExpense},
-                  onSelectionChanged: (value) {
-                    setState(() {
-                      _isExpense = value.first;
-                      _category = _isExpense ? 'Food' : 'Salary';
-                    });
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _titleCtrl,
-                textCapitalization: TextCapitalization.sentences,
-                textInputAction: TextInputAction.next,
-                decoration: _decoration(
-                  'Title (e.g. Lunch)',
-                  Icons.edit_outlined,
-                ),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'Please enter a title';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 14),
-
-              TextFormField(
-                controller: _amountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: _decoration('Amount', Icons.payments_outlined),
-                validator: (v) {
-                  final value = double.tryParse(v?.trim() ?? '');
-                  if (value == null) return 'Enter a valid amount';
-                  if (value <= 0) return 'Amount must be greater than 0';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 18),
-
-              const Text(
-                'Category',
-                style: TextStyle(fontWeight: FontWeight.w700, color: dark),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: categories.map((c) {
-                  final selected = _category == c;
-                  return ChoiceChip(
-                    label: Text(c),
-                    selected: selected,
-                    showCheckmark: false,
-                    selectedColor: primary,
-                    labelStyle: TextStyle(
-                      color: selected ? Colors.white : dark,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    onSelected: (_) => setState(() => _category = c),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 24),
-
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: const Text(
-                    'Save',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

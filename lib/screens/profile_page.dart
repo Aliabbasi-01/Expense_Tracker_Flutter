@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 
+import 'package:expense_tracker/services/auth_service.dart';
+import 'package:expense_tracker/services/currency_service.dart';
+import 'package:expense_tracker/services/finance_service.dart';
+
 import 'login_page.dart';
 
 class ProfilePage extends StatefulWidget {
   final String name;
   final String email;
   final int transactionCount;
-  final String incomeText;
-  final String expenseText;
+  final double income;
+  final double expense;
 
   const ProfilePage({
     super.key,
     required this.name,
     required this.email,
     required this.transactionCount,
-    required this.incomeText,
-    required this.expenseText,
+    required this.income,
+    required this.expense,
   });
 
   @override
@@ -121,6 +125,126 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  Future<void> _chooseCurrency() async {
+    final userId = Session.userId;
+    if (userId == null) {
+      _showMessage('No user is signed in', error: true);
+      return;
+    }
+
+    String? loadingCode;
+    String? errorMessage;
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final lastUpdated = CurrencyService.instance.lastUpdated?.toLocal();
+          final updatedText = lastUpdated == null
+              ? 'ExchangeRate-API rates update daily. Amounts are stored in PKR and converted for display.'
+              : 'ExchangeRate-API rates last updated ${lastUpdated.day}/${lastUpdated.month}/${lastUpdated.year}. Amounts are stored in PKR and converted for display.';
+
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            title: const Text(
+              'Select currency',
+              style: TextStyle(fontWeight: FontWeight.w800, color: dark),
+            ),
+            content: SizedBox(
+              width: 400,
+              height: 390,
+              child: Column(
+                children: [
+                  Text(
+                    updatedText,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      errorMessage!,
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  ],
+                  if (loadingCode != null) ...[
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                  ],
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: CurrencyService.currencies.length,
+                      itemBuilder: (context, index) {
+                        final currency = CurrencyService.currencies[index];
+                        final isSelected =
+                            currency.code ==
+                            CurrencyService.instance.selectedCode;
+                        return ListTile(
+                          enabled: loadingCode == null,
+                          title: Text(currency.label),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_rounded, color: primary)
+                              : null,
+                          onTap: () async {
+                            setDialogState(() {
+                              loadingCode = currency.code;
+                              errorMessage = null;
+                            });
+                            try {
+                              await CurrencyService.instance.selectCurrency(
+                                currency.code,
+                                userId: userId,
+                              );
+                              if (!context.mounted) return;
+                              Navigator.pop(dialogContext, currency.code);
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              setDialogState(() {
+                                loadingCode = null;
+                                errorMessage = 'Could not change currency: $e';
+                              });
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: loadingCode == null
+                    ? () => Navigator.pop(dialogContext)
+                    : null,
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (selected != null && mounted) {
+      setState(() {});
+      _showMessage('Currency changed to $selected');
+    }
+  }
+
+  void _showMessage(String message, {bool error = false}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: error ? Colors.redAccent : null,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
   void _comingSoon(String feature) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -163,6 +287,16 @@ class _ProfilePageState extends State<ProfilePage> {
     );
 
     if (confirm != true || !mounted) return;
+
+    try {
+      await AuthService.instance.logout();
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage('Could not log out: $error', error: true);
+      return;
+    }
+    if (!mounted) return;
+    Session.clear();
 
     // Purani saari screens hata kar sirf Login rakho,
     // taake back dabane par dashboard wapas na aaye
@@ -211,8 +345,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         _tile(
                           icon: Icons.payments_outlined,
                           title: 'Currency',
-                          trailingText: 'PKR (Rs)',
-                          onTap: () => _comingSoon('Currency'),
+                          trailingText:
+                              '${CurrencyService.instance.selectedCode} (${CurrencyService.instance.selectedCurrency.symbol})',
+                          onTap: _chooseCurrency,
                         ),
                       ]),
                       const SizedBox(height: 28),
@@ -385,7 +520,7 @@ class _ProfilePageState extends State<ProfilePage> {
             icon: Icons.arrow_downward_rounded,
             color: const Color(0xFF26A69A),
             label: 'Income',
-            value: widget.incomeText,
+            value: money(widget.income),
           ),
         ),
         const SizedBox(width: 12),
@@ -394,7 +529,7 @@ class _ProfilePageState extends State<ProfilePage> {
             icon: Icons.arrow_upward_rounded,
             color: Colors.redAccent,
             label: 'Expenses',
-            value: widget.expenseText,
+            value: money(widget.expense),
           ),
         ),
       ],

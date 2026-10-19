@@ -1,7 +1,32 @@
 plugins {
     id("com.android.application")
+    id("com.google.gms.google-services") apply false
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val androidApplicationId = "com.example.expense_tracker"
+val firebaseConfig = file("google-services.json")
+val hasMatchingFirebaseClient = if (firebaseConfig.isFile) {
+    val config = groovy.json.JsonSlurper().parse(firebaseConfig) as? Map<*, *>
+    val clients = config?.get("client") as? List<*>
+    clients?.any { client ->
+        val clientInfo = (client as? Map<*, *>)?.get("client_info") as? Map<*, *>
+        val androidInfo =
+            clientInfo?.get("android_client_info") as? Map<*, *>
+        androidInfo?.get("package_name") == androidApplicationId
+    } == true
+} else {
+    false
+}
+
+if (hasMatchingFirebaseClient) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.warn(
+        "Firebase is not configured for $androidApplicationId. " +
+            "Add its matching google-services.json to android/app/ to enable sign-in and groups.",
+    )
 }
 
 android {
@@ -16,7 +41,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.expense_tracker"
+        applicationId = androidApplicationId
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

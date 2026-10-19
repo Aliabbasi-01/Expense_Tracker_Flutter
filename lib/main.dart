@@ -11,7 +11,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Auth',
+      title: 'Expense Tracker',
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF5B4BFF),

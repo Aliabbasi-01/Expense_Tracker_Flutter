@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:expense_tracker/services/auth_service.dart';
+import 'package:expense_tracker/services/currency_service.dart';
+import 'package:expense_tracker/services/finance_service.dart';
 
 import 'dashboard_page.dart';
 import 'register_page.dart';
@@ -40,10 +42,9 @@ class _LoginPageState extends State<LoginPage> {
       password: _passCtrl.text,
     );
 
-    if (!mounted) return;
-    setState(() => _loading = false);
-
     if (!result.success) {
+      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -54,6 +55,45 @@ class _LoginPageState extends State<LoginPage> {
           ),
         );
       return;
+    }
+
+    final currencyCode = result.user!['currency_code'] as String? ?? 'PKR';
+    late final bool ratesAreFresh;
+    try {
+      ratesAreFresh = await CurrencyService.instance.initialize(currencyCode);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Could not load currency rates: $e'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    // Logged-in user ko save karte hain: Home, Stats aur Wallet isi se
+    // pehchante hain ke kis user ka data dikhana hai.
+    Session.userId = result.user!['id'] as int;
+    Session.userName = result.user!['name'] as String;
+    Session.userEmail = result.user!['email'] as String;
+
+    if (!ratesAreFresh) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Using saved exchange rates because live rates are unavailable.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
 
     // pushReplacement: login screen stack se hat jati hai,

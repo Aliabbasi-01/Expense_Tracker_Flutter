@@ -55,6 +55,7 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _termsError = !_acceptTerms);
     if (!formOk || !_acceptTerms) return;
 
+    FocusScope.of(context).unfocus();
     setState(() => _loading = true);
 
     // User ko local database mein save karte hain
@@ -75,8 +76,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
     _showMessage(result.message);
 
-    // Wapas login page par
-    Navigator.pop(context);
+    // Wapas login page par, saath mein registered email bhi bhejo
+    // (login page isay email field mein khud bhar deta hai)
+    Navigator.pop(context, _emailCtrl.text.trim());
   }
 
   InputDecoration _inputStyle(String hint, IconData icon, {Widget? suffix}) {
