@@ -34,6 +34,7 @@ class _ProfilePageState extends State<ProfilePage> {
   late String _name;
   late String _email;
   bool _notifications = true;
+  bool _changingPassword = false;
 
   @override
   void initState() {
@@ -254,6 +255,128 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  Future<void> _changePassword() async {
+    if (_changingPassword) return;
+
+    final formKey = GlobalKey<FormState>();
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    try {
+      final passwords = await showDialog<(String, String)>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: const Text(
+            'Change password',
+            style: TextStyle(fontWeight: FontWeight.w800, color: dark),
+          ),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: currentPasswordController,
+                  obscureText: true,
+                  decoration: _fieldStyle(
+                    'Current password',
+                    Icons.lock_outline_rounded,
+                  ),
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Enter your current password'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: newPasswordController,
+                  obscureText: true,
+                  decoration: _fieldStyle(
+                    'New password',
+                    Icons.lock_reset_rounded,
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Enter a new password';
+                    }
+                    if (value.length < 6) {
+                      return 'Password must be at least 6 characters';
+                    }
+                    if (value == currentPasswordController.text) {
+                      return 'Choose a different password';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: confirmPasswordController,
+                  obscureText: true,
+                  decoration: _fieldStyle(
+                    'Confirm new password',
+                    Icons.lock_outline_rounded,
+                  ),
+                  validator: (value) => value != newPasswordController.text
+                      ? 'Passwords do not match'
+                      : null,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                Navigator.pop(dialogContext, (
+                  currentPasswordController.text,
+                  newPasswordController.text,
+                ));
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Update password'),
+            ),
+          ],
+        ),
+      );
+
+      if (passwords == null || !mounted) return;
+      setState(() => _changingPassword = true);
+      await AuthService.instance.changePassword(
+        currentPassword: passwords.$1,
+        newPassword: passwords.$2,
+      );
+      if (mounted) _showMessage('Password changed successfully.');
+    } catch (error) {
+      if (mounted) {
+        _showMessage(
+          error.toString().replaceFirst('Bad state: ', ''),
+          error: true,
+        );
+      }
+    } finally {
+      currentPasswordController.dispose();
+      newPasswordController.dispose();
+      confirmPasswordController.dispose();
+      if (mounted && _changingPassword) {
+        setState(() => _changingPassword = false);
+      }
+    }
+  }
+
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -340,7 +463,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         _tile(
                           icon: Icons.lock_outline_rounded,
                           title: 'Change password',
-                          onTap: () => _comingSoon('Change password'),
+                          onTap: _changePassword,
                         ),
                         _tile(
                           icon: Icons.payments_outlined,

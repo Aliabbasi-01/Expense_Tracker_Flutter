@@ -133,6 +133,50 @@ class AuthService {
     await FirebaseAuth.instance.signOut();
   }
 
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email;
+    if (user == null || email == null) {
+      throw StateError('Sign in again before changing your password.');
+    }
+
+    try {
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(email: email, password: currentPassword),
+      );
+      await user.updatePassword(newPassword);
+    } on FirebaseAuthException catch (error) {
+      throw StateError(_passwordChangeError(error));
+    }
+
+    final db = await DatabaseHelper.instance.database;
+    await db.update(
+      'users',
+      {'password_hash': BCrypt.hashpw(newPassword, BCrypt.gensalt())},
+      where: 'email = ?',
+      whereArgs: [_normalizeEmail(email)],
+    );
+  }
+
+  String _passwordChangeError(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'invalid-credential':
+      case 'wrong-password':
+        return 'Current password is incorrect.';
+      case 'requires-recent-login':
+        return 'Please sign in again before changing your password.';
+      case 'weak-password':
+        return 'Choose a stronger password with at least 6 characters.';
+      case 'network-request-failed':
+        return 'Check your internet connection and try again.';
+      default:
+        return error.message ?? 'Could not change your password.';
+    }
+  }
+
   // ---------- login ----------
   Future<AuthResult> login({
     required String email,
