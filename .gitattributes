@@ -1,0 +1,13 @@
+# Flutter generated/build files: GitHub language stats se ignore karo
+build/** linguist-generated
+.dart_tool/** linguist-generated
+.flutter-plugins/** linguist-generated
+.flutter-plugins-dependencies/** linguist-generated
+ios/Pods/** linguist-generated
+android/.gradle/** linguist-generated
+
+# Flutter web files ignore karo (JavaScript count kam karne ke liye)
+web/** linguist-generated
+
+# Dart ko main language banao
+*.dart linguist-language=Dart
